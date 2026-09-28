@@ -44,7 +44,7 @@ chmod 600 .env
 python3 -c 'import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
 ```
 
-邮箱验证依赖 SMTP。未配置邮件服务时，不要开放注册。GHCR 镜像若为私有，先在 VPS 上以具有 `read:packages` 权限的凭据执行 `docker login ghcr.io`，凭据在终端交互输入。
+邮箱验证使用 [Resend SMTP](https://resend.com/docs/send-with-smtp)：在 Resend 验证发件域名 `cizhounyc.cn`，按其页面提示添加 DNS 记录，再创建用于发信的 API Key。`.env` 已预设 `smtp.resend.com:465`、用户名 `resend` 和 `noreply@cizhounyc.cn`；仅把 API Key 填入 VPS 上的 `MAIL_PASSWORD`，不要发到聊天中。未完成验证邮件测试前，不开放注册。当前 GHCR 镜像可匿名拉取，无需在 VPS 保存 GitHub 令牌。
 
 ## 4. 启动与检查
 
@@ -60,6 +60,6 @@ docker compose logs --tail=80 api web caddy
 
 ## 5. 备份与开放
 
-配置服务器外的 restic 仓库与凭据，安装 `deploy/growth-backup.service` 和 timer。首次运行后在隔离目录恢复快照，执行 `PRAGMA integrity_check` 并启动测试实例验证数据。设置外部 HTTPS 可用性监测。正式发邀请码前，分别用目标用户网络测试登录、今日页和公开主页。
+在 Cloudflare R2 创建私有标准存储桶 `growth-platform-backups`，生成仅对该桶有读写权限的 R2 API 凭据。R2 的 S3 端点是 `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`，区域用 `auto`；见 [Cloudflare R2 S3 文档](https://developers.cloudflare.com/r2/api/s3/api/) 和 [restic S3 后端文档](https://restic.readthedocs.io/en/stable/030_preparing_a_new_repo.html#s3-compatible-storage)。将 `deploy/backup.env.example` 复制到 `/etc/growth-platform/backup.env`，填好仓库、restic 加密密码和 R2 凭据，并设为只允许 `growth` 用户读取。初始化 restic 仓库后安装 `deploy/growth-backup.service` 和 timer。首次运行后在隔离目录恢复快照，执行 `PRAGMA integrity_check` 并启动测试实例验证数据。设置外部 HTTPS 可用性监测。正式发邀请码前，分别用目标用户网络测试登录、今日页和公开主页。
 
 SSH 密码登录和服务器防火墙在站点验收后按逐项确认的加固流程处理。配置前保留 KiwiVM 控制台作为恢复入口，改动后立即验证新的 SSH 连接和网站访问。
