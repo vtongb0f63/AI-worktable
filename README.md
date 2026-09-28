@@ -45,6 +45,8 @@ cd web && npm run lint && npm run build
 
 ## 1 GB VPS 部署
 
+AlmaLinux 9 的逐步操作见 [部署说明](deploy/ALMALINUX.md)。
+
 1. 准备域名、SMTP 账号、异地 restic 存储库和 GitHub 仓库。设置 `.env`，从 `.env.example` 复制并替换所有占位值；用 `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'` 生成加密主密钥。`.env` 权限设为仅部署用户可读。
 2. GitHub Actions 在 `main` 推送后构建并发布 GHCR 镜像。将 `API_IMAGE`、`WEB_IMAGE` 设置为实际仓库的镜像名。私有 GHCR 镜像需在服务器执行一次 `docker login ghcr.io`。
 3. 在服务器创建 `data/`，执行 `docker compose pull && docker compose up -d`。只开放 SSH、80、443；SQLite 数据库仅挂载到 API 容器，不开放数据库端口。Caddy 自动签发 TLS 证书。
