@@ -60,6 +60,27 @@ docker compose logs --tail=80 api web caddy
 
 ## 5. 备份与开放
 
-在 Cloudflare R2 创建私有标准存储桶 `growth-platform-backups`，生成仅对该桶有读写权限的 R2 API 凭据。R2 的 S3 端点是 `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`，区域用 `auto`；见 [Cloudflare R2 S3 文档](https://developers.cloudflare.com/r2/api/s3/api/) 和 [restic S3 后端文档](https://restic.readthedocs.io/en/stable/030_preparing_a_new_repo.html#s3-compatible-storage)。将 `deploy/backup.env.example` 复制到 `/etc/growth-platform/backup.env`，填好仓库、restic 加密密码和 R2 凭据，并设为只允许 `growth` 用户读取。初始化 restic 仓库后安装 `deploy/growth-backup.service` 和 timer。首次运行后在隔离目录恢复快照，执行 `PRAGMA integrity_check` 并启动测试实例验证数据。设置外部 HTTPS 可用性监测。正式发邀请码前，分别用目标用户网络测试登录、今日页和公开主页。
+在 Cloudflare R2 创建私有标准存储桶 `growth-platform-backups`，生成仅对该桶有读写权限的 R2 API 凭据。R2 的 S3 端点是 `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`，区域用 `auto`；见 [Cloudflare R2 S3 文档](https://developers.cloudflare.com/r2/api/s3/api/) 和 [restic S3 后端文档](https://restic.readthedocs.io/en/stable/030_preparing_a_new_repo.html#s3-compatible-storage)。restic 可从 [EPEL 安装](https://restic.readthedocs.io/en/stable/020_installation.html#rhel-centos-stream)：
+
+```sh
+dnf -y install epel-release
+dnf -y install restic
+install -d -o growth -g growth -m 700 /etc/growth-platform
+install -o growth -g growth -m 600 deploy/backup.env.example /etc/growth-platform/backup.env
+```
+
+在 VPS 上编辑 `/etc/growth-platform/backup.env`，填好 R2 账号 ID、访问密钥和一个独立的长随机 `RESTIC_PASSWORD`。这个密码及 R2 凭据必须另存到服务器之外；丢失 restic 密码就无法恢复备份。不要把它们发到聊天或提交到 Git。初始化仓库，再安装和试运行计时器：
+
+```sh
+runuser -u growth -- /bin/bash -c 'set -a; . /etc/growth-platform/backup.env; restic init'
+install -m 644 deploy/growth-backup.service /etc/systemd/system/growth-backup.service
+install -m 644 deploy/growth-backup.timer /etc/systemd/system/growth-backup.timer
+systemctl daemon-reload
+systemctl start growth-backup.service
+systemctl enable --now growth-backup.timer
+systemctl status growth-backup.service --no-pager
+```
+
+首次运行后在隔离目录恢复快照，执行 `PRAGMA integrity_check` 并启动测试实例验证数据。设置外部 HTTPS 可用性监测。正式发邀请码前，分别用目标用户网络测试登录、今日页和公开主页。
 
 SSH 密码登录和服务器防火墙在站点验收后按逐项确认的加固流程处理。配置前保留 KiwiVM 控制台作为恢复入口，改动后立即验证新的 SSH 连接和网站访问。
