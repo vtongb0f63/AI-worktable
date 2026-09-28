@@ -1,0 +1,13 @@
+[Unit]
+Description=Growth platform encrypted offsite backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=growth
+WorkingDirectory=/srv/growth-platform
+EnvironmentFile=/etc/growth-platform/backup.env
+Environment=DATABASE_PATH=/srv/growth-platform/data/growth.db
+Environment=BACKUP_DIR=/srv/growth-platform/backups
+ExecStart=/bin/sh /srv/growth-platform/scripts/backup-offsite.sh

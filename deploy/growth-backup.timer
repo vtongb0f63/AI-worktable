@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily growth platform backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+Unit=growth-backup.service
+
+[Install]
+WantedBy=timers.target
