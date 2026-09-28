@@ -29,7 +29,7 @@ docker compose version
 
 ```sh
 dnf -y install git
-git clone https://github.com/OWNER/REPO.git /srv/growth-platform
+git clone https://github.com/vtongb0f63/AI-worktable.git /srv/growth-platform
 groupadd -g 10001 growth
 useradd -u 10001 -g 10001 -M -s /sbin/nologin growth
 install -d -o 10001 -g 10001 -m 750 /srv/growth-platform/data /srv/growth-platform/backups
