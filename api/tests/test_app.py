@@ -28,9 +28,9 @@ def client(tmp_path, monkeypatch):
 def make_user(client, email, username, invite):
     response = client.post("/api/auth/register", json={"email": email, "username": username, "password": "a-long-password-123", "invite_code": invite})
     assert response.status_code == 201, response.text
-    token = parse_qs(urlparse(response.json()["dev_verification_url"]).query)["token"][0]
-    assert client.post("/api/auth/verify", params={"token": token}).status_code == 200
-    assert client.post("/api/auth/verify", params={"token": token}).status_code == 200
+    token = parse_qs(urlparse(response.json()["dev_verification_url"]).fragment)["token"][0]
+    assert client.post("/api/auth/verify", json={"token": token}).status_code == 200
+    assert client.post("/api/auth/verify", json={"token": token}).status_code == 200
     assert client.post("/api/auth/login", json={"email": email, "password": "a-long-password-123"}).status_code == 200
 
 
@@ -77,6 +77,32 @@ def test_isolation_progress_public_and_history(client):
     assert client.patch(f"/api/nodes/{public_task}", json={"title":"stolen"}).status_code == 404
     assert client.get(f"/api/nodes/{public_task}/versions").status_code == 404
     assert client.get("/api/nodes").json() == []
+
+
+def test_move_reclassify_and_delete_goal_branch(client):
+    make_user(client, "admin@example.com", "admin", "first-admin-code")
+    vision = create(client, "vision", "四年愿景")
+    first_year = create(client, "year", "大一", vision)
+    second_year = create(client, "year", "大二", vision)
+    semester = create(client, "semester", "第一学期", first_year)
+    month = create(client, "month", "旧层级", semester)
+    week = create(client, "week", "旧周", month)
+    task = create(client, "task", "旧任务", week)
+
+    assert client.patch(f"/api/nodes/{semester}", json={"parent_id": second_year}).status_code == 200
+    assert client.patch(f"/api/nodes/{month}", json={"kind": "semester", "parent_id": second_year}).status_code == 200
+    nodes = {node["id"]: node for node in client.get("/api/nodes").json()}
+    assert nodes[semester]["parent_id"] == second_year
+    assert [nodes[node_id]["kind"] for node_id in (month, week, task)] == ["semester", "month", "week"]
+    assert client.patch(f"/api/nodes/{month}", json={"kind": "month", "parent_id": task}).status_code == 422
+    assert len(client.get(f"/api/nodes/{week}/versions").json()) == 2
+
+    assert client.delete(f"/api/nodes/{month}").status_code == 204
+    remaining = {node["id"] for node in client.get("/api/nodes").json()}
+    assert remaining == {vision, first_year, second_year, semester}
+    with connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM node_versions WHERE node_id IN (?,?,?)", (month, week, task)).fetchone()[0] == 0
+    assert any(event["kind"] == "deleted" for event in client.get("/api/events").json())
 
 
 def test_main_limit_reports_and_hide(client):

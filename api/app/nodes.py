@@ -25,6 +25,8 @@ class NodeInput(BaseModel):
 
 
 class NodeUpdate(BaseModel):
+    kind: str | None = None
+    parent_id: str | None = None
     title: str | None = Field(default=None, min_length=1, max_length=160)
     note: str | None = Field(default=None, max_length=5000)
     starts_on: str | None = None
@@ -125,10 +127,58 @@ def update_node(node_id: str, data: NodeUpdate, user=Depends(require_user)):
     check_dates(changes)
     with transaction() as db:
         before = owned_node(db, user["id"], node_id)
+        target_kind = changes.get("kind", before["kind"])
+        target_parent_id = changes.get("parent_id", before["parent_id"])
+        if target_kind not in PARENTS:
+            raise HTTPException(422, "目标类型无效")
+        branch = [dict(row) for row in db.execute(
+            "WITH RECURSIVE branch(id,kind,depth) AS ("
+            "SELECT id,kind,0 FROM nodes WHERE id=? AND user_id=? "
+            "UNION ALL SELECT child.id,child.kind,branch.depth+1 FROM nodes child "
+            "JOIN branch ON child.parent_id=branch.id WHERE child.user_id=?"
+            ") SELECT id,kind,depth FROM branch ORDER BY depth",
+            (node_id, user["id"], user["id"]),
+        )]
+        branch_ids = {row["id"] for row in branch}
+        if target_parent_id in branch_ids:
+            raise HTTPException(422, "上级目标不能是自身或下级目标")
+        if target_parent_id:
+            parent = owned_node(db, user["id"], target_parent_id)
+            if parent["kind"] != PARENTS[target_kind]:
+                raise HTTPException(422, "上级目标与层级不匹配")
+        elif target_kind != "vision":
+            raise HTTPException(422, "请选择上级目标")
+        if target_kind == "vision" and db.execute(
+            "SELECT 1 FROM nodes WHERE user_id=? AND kind='vision' AND id<>?",
+            (user["id"], node_id),
+        ).fetchone():
+            raise HTTPException(409, "每位用户只能建立一个四年愿景")
+        shift = list(PARENTS).index(target_kind) - list(PARENTS).index(before["kind"])
+        shifted_kinds = {}
+        for row in branch:
+            next_index = list(PARENTS).index(row["kind"]) + shift
+            if not 0 <= next_index < len(PARENTS):
+                raise HTTPException(422, "下级目标超出可用层级，请先调整下级目标")
+            shifted_kinds[row["id"]] = list(PARENTS)[next_index]
+        year_count = db.execute("SELECT COUNT(*) FROM nodes WHERE user_id=? AND kind='year'", (user["id"],)).fetchone()[0]
+        year_count -= sum(row["kind"] == "year" for row in branch)
+        year_count += sum(kind == "year" for kind in shifted_kinds.values())
+        if year_count > 4:
+            raise HTTPException(422, "四年愿景最多包含 4 个学年")
+        if target_kind != "task":
+            if changes.get("is_main"):
+                raise HTTPException(422, "只有日任务能设为今日主任务")
+            if before["is_main"]:
+                changes["is_main"] = False
+        if target_kind != "week":
+            if changes.get("is_week_focus"):
+                raise HTTPException(422, "只有周重点能加入周计划")
+            if before["is_week_focus"]:
+                changes["is_week_focus"] = False
         effective_due = changes.get("due_on", before["due_on"])
         effective_main = changes.get("is_main", bool(before["is_main"]))
         if "is_main" in changes or "due_on" in changes and before["is_main"]:
-            if before["kind"] != "task" or not effective_due:
+            if effective_main and (target_kind != "task" or not effective_due):
                 raise HTTPException(422, "只有指定日期的任务能设为今日主任务")
             if effective_main and (not before["is_main"] or effective_due != before["due_on"]):
                 count = db.execute("SELECT COUNT(*) FROM nodes WHERE user_id=? AND kind='task' AND due_on=? AND is_main=1", (user["id"], effective_due)).fetchone()[0]
@@ -137,7 +187,7 @@ def update_node(node_id: str, data: NodeUpdate, user=Depends(require_user)):
         effective_start = changes.get("starts_on", before["starts_on"])
         effective_focus = changes.get("is_week_focus", bool(before["is_week_focus"]))
         if "is_week_focus" in changes or "starts_on" in changes and before["is_week_focus"]:
-            if before["kind"] != "week" or not effective_start:
+            if effective_focus and (target_kind != "week" or not effective_start):
                 raise HTTPException(422, "仅周重点可以加入周计划")
             if effective_focus and (not before["is_week_focus"] or effective_start != before["starts_on"]):
                 count = db.execute("SELECT COUNT(*) FROM nodes WHERE user_id=? AND kind='week' AND starts_on=? AND is_week_focus=1", (user["id"], effective_start)).fetchone()[0]
@@ -152,14 +202,43 @@ def update_node(node_id: str, data: NodeUpdate, user=Depends(require_user)):
             changes["title"] = changes["title"].strip()
             if not changes["title"]:
                 raise HTTPException(422, "标题不能为空")
+        if shift:
+            for row in branch[1:]:
+                next_kind = shifted_kinds[row["id"]]
+                db.execute(
+                    "UPDATE nodes SET kind=?,is_main=CASE WHEN ?='task' THEN is_main ELSE 0 END,"
+                    "is_week_focus=CASE WHEN ?='week' THEN is_week_focus ELSE 0 END,updated_at=? WHERE id=? AND user_id=?",
+                    (next_kind, next_kind, next_kind, iso(), row["id"], user["id"]),
+                )
+                save_version(db, owned_node(db, user["id"], row["id"]))
         columns = ",".join(f"{key}=?" for key in changes)
         db.execute(f"UPDATE nodes SET {columns},updated_at=? WHERE id=? AND user_id=?", (*changes.values(), iso(), node_id, user["id"]))
         after = owned_node(db, user["id"], node_id)
         save_version(db, after)
         event_kind = "completed" if changes.get("is_done") == 1 else "corrected" if "is_done" in changes else "updated"
-        add_event(db, user["id"], node_id, event_kind, {"fields": list(changes), "title": after["title"]})
+        add_event(db, user["id"], node_id, event_kind, {"fields": list(changes), "title": after["title"], "shifted_descendants": len(branch)-1 if shift else 0})
         rows = [dict(x) for x in db.execute("SELECT * FROM nodes WHERE user_id=?", (user["id"],))]
     return serialize_node(after, compute_progress(rows))
+
+
+@router.delete("/nodes/{node_id}", status_code=204)
+def delete_node(node_id: str, user=Depends(require_user)):
+    with transaction() as db:
+        node = owned_node(db, user["id"], node_id)
+        branch_ids = [row[0] for row in db.execute(
+            "WITH RECURSIVE branch(id) AS ("
+            "SELECT id FROM nodes WHERE id=? AND user_id=? "
+            "UNION ALL SELECT child.id FROM nodes child JOIN branch ON child.parent_id=branch.id WHERE child.user_id=?"
+            ") SELECT id FROM branch",
+            (node_id, user["id"], user["id"]),
+        )]
+        placeholders = ",".join("?" for _ in branch_ids)
+        db.execute(
+            f"DELETE FROM node_versions WHERE user_id=? AND node_id IN ({placeholders})",
+            (user["id"], *branch_ids),
+        )
+        db.execute("DELETE FROM nodes WHERE id=? AND user_id=?", (node_id, user["id"]))
+        add_event(db, user["id"], None, "deleted", {"title": node["title"], "count": len(branch_ids)})
 
 
 @router.get("/nodes/{node_id}/versions")

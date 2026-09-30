@@ -31,13 +31,19 @@ class EmailInput(BaseModel):
     email: EmailStr
 
 
+class VerificationInput(BaseModel):
+    token: str = Field(min_length=32, max_length=128)
+
+
 class InviteInput(BaseModel):
     uses: int = Field(default=1, ge=1, le=100)
     days: int = Field(default=14, ge=1, le=90)
 
 
 def send_verification(email, token):
-    url = f"{config.APP_ORIGIN}/verify?token={token}"
+    # Keep the token in the URL fragment so browsers do not send it to the web
+    # server, reverse proxy, or referrer headers when loading the verify page.
+    url = f"{config.APP_ORIGIN}/verify#token={token}"
     if not config.MAIL_HOST:
         if config.APP_ORIGIN.startswith("http://localhost"):
             return url
@@ -88,9 +94,9 @@ def register(data: RegisterInput):
 
 
 @router.post("/auth/verify")
-def verify(token: str):
+def verify(data: VerificationInput):
     with transaction() as db:
-        row = db.execute("SELECT user_id FROM verification_tokens WHERE token_hash=? AND expires_at>?", (digest(token), iso())).fetchone()
+        row = db.execute("SELECT user_id FROM verification_tokens WHERE token_hash=? AND expires_at>?", (digest(data.token), iso())).fetchone()
         if not row:
             raise HTTPException(400, "验证链接无效或已过期")
         db.execute("UPDATE users SET verified_at=COALESCE(verified_at,?) WHERE id=?", (iso(), row["user_id"]))
