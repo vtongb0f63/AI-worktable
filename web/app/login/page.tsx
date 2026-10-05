@@ -55,6 +55,7 @@ export default function LoginPage() {
           } catch(e) { setError((e as Error).message); }
         }}>重发验证邮件</button>
         <p className="subtle auth-switch">还没有账号？ <Link href="/register" className="auth-link">用邀请码注册</Link></p>
+        <p className="subtle">只想看看公开档案？ <Link href="/" className="auth-link">无需注册，直接查看</Link></p>
       </form>
     </section>
   </main>;

@@ -56,6 +56,7 @@ export default function RegisterPage() {
         <input id="register-invite" className="field" required value={invite} onChange={e=>setInvite(e.target.value)}/>
         <button className="button auth-submit" disabled={busy}>{busy?'正在创建…':'创建账号'}</button>
         <p className="subtle auth-switch">已有账号？ <Link href="/login" className="auth-link">去登录</Link></p>
+        <p className="subtle">只想看看公开档案？ <Link href="/" className="auth-link">无需注册，直接查看</Link></p>
       </form>
     </section>
   </main>;
