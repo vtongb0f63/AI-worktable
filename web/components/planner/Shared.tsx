@@ -171,6 +171,7 @@ export function RecordForm({
               <span>{field.label}</span>
               {field.options ? (
                 <select
+                  required={field.required}
                   name={field.name}
                   defaultValue={String(
                     initial[field.name] ?? field.options[0][0],

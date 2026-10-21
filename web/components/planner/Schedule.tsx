@@ -35,10 +35,11 @@ export const courseFields: Field[] = [
   {
     name: "weekday",
     label: "星期",
-    options: ["一", "二", "三", "四", "五", "六", "日"].map((x, i) => [
+    required: true,
+    options: [["", "请选择星期"], ...["一", "二", "三", "四", "五", "六", "日"].map((x, i) => [
       String(i),
       `星期${x}`,
-    ]),
+    ] as [string, string])],
   },
   {
     name: "semester_start",
@@ -214,6 +215,7 @@ function CoursePreview({
     [editing, setEditing] = useState<number | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  const incomplete = courses.filter(c => !c.start_time || !c.end_time || c.weekday === null);
   return (
     <section className="draft-panel">
       <h3>识别出的课表 · 请核对后导入</h3>
@@ -226,7 +228,7 @@ function CoursePreview({
             <div>
               <strong>{c.title}</strong>
               <p>
-                周{"一二三四五六日"[c.weekday]} {c.start_time}–{c.end_time} · 第
+                {c.weekday === null ? "星期待核对" : `周${"一二三四五六日"[c.weekday]}`} {c.start_time || "开始时间待补充"}–{c.end_time || "结束时间待补充"} · 第
                 {c.start_week}–{c.end_week}周 · {c.location}
               </p>
             </div>
@@ -246,9 +248,10 @@ function CoursePreview({
         ))}
       </ul>
       <Notice text={error} error />
+      {incomplete.length ? <Notice text={`还有 ${incomplete.length} 门课程需要补齐时间或星期。请点“核对 / 编辑”，也可以移除后手动添加。`} /> : null}
       <button
         className="button"
-        disabled={busy || !courses.length}
+        disabled={busy || !courses.length || incomplete.length > 0}
         onClick={async () => {
           setBusy(true);
           try {

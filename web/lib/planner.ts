@@ -87,7 +87,7 @@ export type Draft = Entity & {
   applied: boolean;
 };
 export type CourseDraft = Entity & {
-  courses: Omit<Course, keyof Entity>[];
+  courses: (Omit<Course, keyof Entity | "start_time" | "end_time" | "weekday"> & { start_time: string | null; end_time: string | null; weekday: number | null })[];
   warnings: string[];
   applied: boolean;
 };

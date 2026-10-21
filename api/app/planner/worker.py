@@ -39,10 +39,9 @@ def prepare(job, provider):
         return {'type': 'draft', 'data': {'plan': plan, 'snapshot': fingerprint, 'week_start': start, 'kind': kind, 'applied': False}}
     if kind == 'course_import':
         from .uploads import load_upload
+        from .course_import import extract
         text, images = load_upload(payload['upload'])
-        result = provider.generate(prompt('从课表截图或PDF提取课程。结合设置中的节次表与学期开始日期；无法确定的信息写在warnings中，不虚构。weekday为周一0至周日6。结果仅供用户编辑确认。', {'text': text, 'settings': profile}, {'courses': [schemas.Course.model_json_schema()], 'warnings': ['需要核对的事项']}), images)
-        courses = [schemas.Course.model_validate(c).model_dump(mode='json') for c in result.get('courses', [])[:100]]
-        return {'type': 'course_draft', 'data': {'courses': courses, 'warnings': result.get('warnings', []), 'applied': False}}
+        return {'type': 'course_draft', 'data': extract(provider, text, images, profile)}
     if kind == 'word_enrich':
         result = provider.generate(prompt('补充单词的中文释义、词性及英文例句。保留word_id，不改动原单词。', words, {'words': [{'word_id': '原id', 'meaning': '中文释义', 'part_of_speech': '词性', 'example': '英文例句'}]}))
         return {'type': 'word_suggestions', 'data': {'words': result['words'], 'versions': {w['id']: w['version'] for w in words}}}
@@ -157,7 +156,12 @@ def tick(provider=None):
     except Exception as exc:
         unavailable = isinstance(exc, AIUnavailable)
         retryable = unavailable and job['attempts'] < 3
-        message = str(exc) if unavailable or isinstance(exc, ValueError) else '任务处理失败，请稍后重试'
+        from pydantic import ValidationError
+        if isinstance(exc, ValidationError):
+            detail = '；'.join(str(e['msg']).removeprefix('Value error, ') for e in exc.errors()[:3])
+            message = 'AI 返回的信息需要核对：' + detail + '。请重试；课表也可以手动添加。'
+        else:
+            message = str(exc) if unavailable or isinstance(exc, ValueError) else '任务处理失败，请稍后重试'
         with transaction() as db:
             db.execute("UPDATE planner_jobs SET status=?,error=?,retry_at=?,updated_at=? WHERE id=? AND status='running'", ('blocked' if unavailable else 'failed', message[:500], iso(now() + timedelta(hours=2)) if retryable else None, iso(), job['id']))
     return True
