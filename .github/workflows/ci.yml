@@ -2,6 +2,7 @@ name: Test and build
 on:
   push:
     branches: [main, codex/personal-study]
+    paths-ignore: ['docs/**', '**/*.md']
   pull_request:
 jobs:
   api:

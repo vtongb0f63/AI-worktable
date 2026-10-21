@@ -177,12 +177,21 @@ def schedule():
             jobs.enqueue(user['id'], 'week_plan', {'week_start': start}, f"week-{user['id']}-{start}", 40)
 
 
+def iteration(provider=None):
+    # A full queue may reject a scheduled addition; existing work must still drain.
+    try:
+        schedule()
+    except Exception:
+        import logging
+        logging.warning('Scheduler will retry after processing existing jobs')
+    return tick(provider)
+
+
 if __name__ == '__main__':
     init_db()
     while True:
         try:
-            schedule()
-            worked = tick()
+            worked = iteration()
         except Exception:
             worked = False
         time.sleep(1 if worked else 20)

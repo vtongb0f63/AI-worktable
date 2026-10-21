@@ -203,3 +203,11 @@ def test_cached_choice_available_without_quota(owner):
     worker.tick(NoAI())
     assert jobs.list_jobs(user_id())[0]['status']=='done'
     assert len(owner.get('/api/v1/questions?job_id='+j['id']).json())==1
+
+
+def test_scheduler_failure_does_not_starve_queue(owner,monkeypatch):
+    def unavailable():
+        raise Conflict('queue full')
+    monkeypatch.setattr(worker,'schedule',unavailable)
+    monkeypatch.setattr(worker,'tick',lambda provider: True)
+    assert worker.iteration(NoAI()) is True
