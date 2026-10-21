@@ -13,6 +13,7 @@ from app.main import app
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, 'PRIVATE_MODE', False)
     monkeypatch.setattr(config, "DATABASE_PATH", tmp_path / "test.db")
     import app.db as db_module
     monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
