@@ -26,6 +26,9 @@ def main():
         errors=[]
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.goto(BASE+'/login');page.wait_for_load_state('networkidle')
+        page.set_viewport_size({'width':390,'height':844})
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth+1'), 'mobile login overflows'
+        page.set_viewport_size({'width':1440,'height':1000})
         page.get_by_label('邮箱',exact=True).fill('owner@example.com')
         page.get_by_label('密码',exact=True).fill('local-e2e-password')
         page.get_by_role('button',name='进入我的工作台').click()

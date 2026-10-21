@@ -1912,7 +1912,7 @@ progress::-webkit-progress-value {
     gap: 6px;
   }
   .login-page {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .login-story {
     padding: 24px 25px 28px;
@@ -1934,7 +1934,8 @@ progress::-webkit-progress-value {
     padding: 35px 24px;
   }
   .login-form form {
-    width: 430px;
+    width: min(430px, 100%);
+    min-width: 0;
   }
   .page-footer {
     font-size: 9px;
