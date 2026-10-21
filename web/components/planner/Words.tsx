@@ -49,7 +49,7 @@ type Attempt = Entity & {
 };
 function Quiz({ id, onChanged }: { id: string; onChanged: () => void }) {
   const questions = useData<Question[]>(`/questions?job_id=${id}`),
-    attempts = useData<Attempt[]>("/attempts");
+    attempts = useData<Attempt[]>(`/attempts?job_id=${id}`);
   const [error, setError] = useState(""),
     [busy, setBusy] = useState("");
   useEffect(() => {

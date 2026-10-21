@@ -243,15 +243,21 @@ def questions(job_id: str, user=Depends(require_user)):
 def answer(key: str, value: schemas.Answer, user=Depends(require_user)):
     with records(user['id']) as store:
         result = services.submit_answer(store, key, value.answer)
-    if result['status'] == 'pending':
-        jobs.enqueue(user['id'], 'grade', {'attempt_id': result['id']}, dedup='grade-' + result['id'], priority=1)
+        if result['status'] == 'pending':
+            jobs.enqueue(user['id'], 'grade', {'attempt_id': result['id']}, dedup='grade-' + result['id'], priority=1, connection=store.db)
     return result
 
 
 @router.get('/attempts')
-def attempts(user=Depends(require_user)):
+def attempts(job_id: str | None = None, user=Depends(require_user)):
     with records(user['id']) as store:
-        return [{**r, 'expected': store.get('question', r['question_id'])['expected']} for r in store.list('attempt')[:100]]
+        rows = store.list('attempt')
+        if job_id:
+            questions = {q['id'] for q in store.list('question') if q.get('job_id') == job_id}
+            rows = [r for r in rows if r['question_id'] in questions]
+        else:
+            rows = rows[:100]
+        return [{**r, 'expected': store.get('question', r['question_id'])['expected']} for r in rows]
 
 
 @router.get('/word-suggestions')

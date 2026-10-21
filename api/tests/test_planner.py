@@ -179,3 +179,27 @@ def test_upload_validation(owner,monkeypatch,tmp_path):
     assert load_upload(key)[1][0].startswith('data:image/png;base64,')
     with pytest.raises(ValueError):
         load_upload('../bad')
+
+
+def test_grade_queue_full_rolls_back_answer(owner):
+    w=add(owner,'words',{'term':'run','meaning':'跑'})
+    with records(user_id()) as store:
+        q=store.save('question',{'word_id':w['id'],'mode':'translation','prompt':'跑','expected':'run','explanation':''})
+    for i in range(30):
+        jobs.enqueue(user_id(),'news',{'index':i})
+    response=owner.post('/api/v1/questions/'+q['id']+'/answers',json={'answer':'run'})
+    assert response.status_code==409
+    with records(user_id()) as store:
+        assert store.list('attempt')==[]
+        assert not store.get('question',q['id']).get('attempt')
+
+
+def test_cached_choice_available_without_quota(owner):
+    w=add(owner,'words',{'term':'run','meaning':'跑'})
+    with records(user_id()) as store:
+        store.save('question',{'word_id':w['id'],'mode':'choice','prompt':'run means?','expected':'跑','options':['跑','游泳','睡觉','吃饭'],'explanation':'run means 跑','direction':'zh-en','word_content':['run','跑','']})
+        services.review_word(store,w['id'],True)
+    j=jobs.enqueue(user_id(),'quiz',{'word_ids':[w['id']],'mode':'choice'})
+    worker.tick(NoAI())
+    assert jobs.list_jobs(user_id())[0]['status']=='done'
+    assert len(owner.get('/api/v1/questions?job_id='+j['id']).json())==1

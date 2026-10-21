@@ -1,4 +1,5 @@
 import json
+from contextlib import nullcontext
 from datetime import timedelta
 from ..db import transaction, connect
 from ..common import uid
@@ -13,10 +14,10 @@ def decode(row):
     return data
 
 
-def enqueue(user_id, kind, payload, dedup=None, priority=10):
+def enqueue(user_id, kind, payload, dedup=None, priority=10, connection=None):
     if len(json.dumps(payload)) > 100000:
         raise ValueError('请求内容过大')
-    with transaction() as db:
+    with nullcontext(connection) if connection is not None else transaction() as db:
         if dedup:
             existing = db.execute('SELECT * FROM planner_jobs WHERE dedup_key=?', (dedup,)).fetchone()
             if existing:
