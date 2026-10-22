@@ -77,7 +77,8 @@ def connect():
     return db
 
 
-MIGRATIONS = {1: SCHEMA}
+from .planner.migration import SCHEMA as PLANNER_SCHEMA
+MIGRATIONS = {1: SCHEMA, 2: PLANNER_SCHEMA}
 
 
 def init_db():
@@ -86,8 +87,11 @@ def init_db():
         version = db.execute("PRAGMA user_version").fetchone()[0]
         for next_version in sorted(MIGRATIONS):
             if next_version > version:
-                db.executescript(MIGRATIONS[next_version])
-                db.execute(f"PRAGMA user_version={next_version}")
+                try:
+                    db.executescript('BEGIN IMMEDIATE;\n' + MIGRATIONS[next_version] + f'\nPRAGMA user_version={next_version};\nCOMMIT;')
+                except Exception:
+                    db.rollback()
+                    raise
         db.execute("UPDATE ai_usage SET busy=0")
         cutoff = datetime.now(timezone.utc).isoformat()
         db.execute("DELETE FROM sessions WHERE expires_at<?", (cutoff,))

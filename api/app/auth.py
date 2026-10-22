@@ -67,6 +67,8 @@ def send_verification(email, token):
 
 @router.post("/auth/register", status_code=201)
 def register(data: RegisterInput):
+    if config.PRIVATE_MODE:
+        raise HTTPException(403, '个人工作台已关闭注册')
     email = str(data.email).lower()
     username = data.username.lower()
     token = make_token()
@@ -148,6 +150,8 @@ def login(data: LoginInput, request: Request, response: Response):
             else:
                 db.execute("UPDATE login_attempts SET count=count+1 WHERE key=?", (rate_key,))
         raise HTTPException(401, "邮箱或密码不正确")
+    if config.PRIVATE_MODE and (not config.OWNER_EMAIL or email != config.OWNER_EMAIL):
+        raise HTTPException(403, '这是私人学习工作台，仅所有者可访问')
     if not user["verified_at"]:
         raise HTTPException(403, "请先验证邮箱")
     with transaction() as db:

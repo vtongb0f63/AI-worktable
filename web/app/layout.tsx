@@ -2,8 +2,9 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: '生长 · 把远方落在今天',
-  description: '从四年愿景到今天的三件事，记录每一步生长。',
+  title: '日课 · 私人学习手帐',
+  description: '安排学习、积累词汇、记录跑步，把每一天落在纸上。',
+  robots: {index:false,follow:false},
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

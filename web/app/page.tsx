@@ -1,3 +1,2 @@
-import Dashboard from '@/components/Dashboard';
-
-export default function Home() { return <Dashboard />; }
+import { redirect } from 'next/navigation';
+export default function Home(){redirect('/today');}

@@ -8,6 +8,8 @@ services:
       COOKIE_SECURE: "true"
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
+      OWNER_EMAIL: ${OWNER_EMAIL:-${ADMIN_EMAIL}}
+      PRIVATE_MODE: "true"
       BOOTSTRAP_INVITE: ${BOOTSTRAP_INVITE}
       MAIL_HOST: ${MAIL_HOST}
       MAIL_PORT: ${MAIL_PORT:-587}
@@ -15,8 +17,6 @@ services:
       MAIL_PASSWORD: ${MAIL_PASSWORD}
       MAIL_FROM: ${MAIL_FROM}
       MAIL_TLS: ${MAIL_TLS:-true}
-      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-flash}
-      AI_DAILY_LIMIT: ${AI_DAILY_LIMIT:-10}
     volumes:
       - ./data:/data
     expose:
@@ -26,6 +26,39 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    mem_limit: 192m
+  worker:
+    image: ${API_IMAGE}
+    restart: unless-stopped
+    command: ["python", "-m", "app.planner.worker"]
+    environment:
+      DATABASE_PATH: /data/growth.db
+      UPLOAD_DIR: /data/uploads
+      OWNER_EMAIL: ${OWNER_EMAIL:-${ADMIN_EMAIL}}
+      AI_GATEWAY_URL: http://gateway:8091
+      AI_GATEWAY_TOKEN: ${AI_GATEWAY_TOKEN:?Set an internal gateway secret}
+    volumes:
+      - ./data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 192m
+  gateway:
+    image: ${GATEWAY_IMAGE}
+    restart: unless-stopped
+    environment:
+      AI_GATEWAY_TOKEN: ${AI_GATEWAY_TOKEN}
+    volumes:
+      - ./private/codex:/home/node/.codex
+    expose:
+      - "8091"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,uid=1000,gid=1000,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 256m
   web:
     image: ${WEB_IMAGE}
     restart: unless-stopped
@@ -37,6 +70,7 @@ services:
         condition: service_healthy
     expose:
       - "3000"
+    mem_limit: 192m
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
