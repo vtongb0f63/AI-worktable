@@ -91,7 +91,7 @@ def prepare_news(job, provider, profile):
         store.save('edition', {'date': day, 'errors': errors, 'sources_checked': len(candidates), 'status': 'sources_ready'})
     if not candidates:
         return {'type': 'news', 'data': [], 'errors': errors, 'date': day}
-    response = provider.generate(prompt('根据提供的来源标题及摘要，去重并精选重大、有实质内容的新闻，每类最多3条。中文摘要80–150字，英文摘要50–90词，英语难度' + profile['english_level'] + '。信息不足时明确说明，不能补造人物、时间、数字或赛事结果。不使用来源以外知识扩写。只返回提供的source_id。', candidates, {'items': [{'source_id': '来源id', 'summary_zh': '中文摘要', 'summary_en': 'English summary'}]}))
+    response = provider.generate(prompt('根据提供的来源标题及摘要，去重并精选重大、有实质内容的新闻，每类最多3条。同等重要性下优先不同来源，AI类优先模型发布、研究与行业动态；DEV.to属于开发者社区，教程或观点须标明，不能当作官方发布。跑步类优先中长跑赛事和运动员动态。中文摘要80–150字，英文摘要50–90词，英语难度' + profile['english_level'] + '。信息不足时允许更短摘要并明确说明，不能为凑字数补造人物、时间、数字或赛事结果。不使用来源以外知识扩写。只返回提供的source_id。', candidates, {'items': [{'source_id': '来源id', 'summary_zh': '中文摘要', 'summary_en': 'English summary'}]}))
     allowed = {c['source_id']: c for c in candidates}
     output, counts = [], {}
     for item in response.get('items', []):
