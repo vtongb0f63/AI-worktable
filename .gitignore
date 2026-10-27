@@ -12,3 +12,10 @@ node_modules/
 .next/
 *.tsbuildinfo
 coverage/
+.local/
+private/
+# Local historical references contain machine paths and infrastructure handoff details.
+docs/reference/
+docs/部署与改版参照.md
+test-results/
+playwright-report/

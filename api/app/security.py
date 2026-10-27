@@ -29,6 +29,7 @@ def make_token():
 
 
 def require_user(session: str | None = Cookie(default=None)):
+    from . import config
     if not session:
         raise HTTPException(401, "请先登录")
     with connect() as db:
@@ -39,6 +40,8 @@ def require_user(session: str | None = Cookie(default=None)):
         ).fetchone()
     if not user:
         raise HTTPException(401, "登录已过期")
+    if config.PRIVATE_MODE and (not config.OWNER_EMAIL or user['email'] != config.OWNER_EMAIL):
+        raise HTTPException(403, '这是私人学习工作台，仅所有者可访问')
     return dict(user)
 
 

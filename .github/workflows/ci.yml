@@ -1,7 +1,8 @@
 name: Test and build
 on:
   push:
-    branches: [main]
+    branches: [main, codex/personal-study]
+    paths-ignore: ['docs/**', '**/*.md']
   pull_request:
 jobs:
   api:
@@ -50,9 +51,15 @@ jobs:
         with:
           context: ./api
           push: true
-          tags: ${{ steps.images.outputs.prefix }}-api:latest
+          tags: ${{ steps.images.outputs.prefix }}-api:${{ github.sha }}
       - uses: docker/build-push-action@v6
         with:
           context: ./web
           push: true
-          tags: ${{ steps.images.outputs.prefix }}-web:latest
+          tags: ${{ steps.images.outputs.prefix }}-web:${{ github.sha }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          file: ./api/Dockerfile.gateway
+          push: true
+          tags: ${{ steps.images.outputs.prefix }}-gateway:${{ github.sha }}

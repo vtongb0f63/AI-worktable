@@ -17,3 +17,8 @@ DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 AI_DAILY_LIMIT = int(os.getenv("AI_DAILY_LIMIT", "10"))
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+PRIVATE_MODE = os.getenv('PRIVATE_MODE', 'true').lower() == 'true'
+OWNER_EMAIL = os.getenv('OWNER_EMAIL', ADMIN_EMAIL).lower()
+AI_GATEWAY_URL = os.getenv('AI_GATEWAY_URL', 'http://127.0.0.1:8091')
+AI_GATEWAY_TOKEN = os.getenv('AI_GATEWAY_TOKEN', '')
+UPLOAD_DIR = Path(os.getenv('UPLOAD_DIR', str(BASE_DIR / 'data' / 'uploads')))
