@@ -25,7 +25,7 @@ export default function Shell({
         跳到主要内容
       </a>
       <aside className="sidebar">
-        <Link href="/today" className="brand">
+        <Link href="/today" replace className="brand">
           <span className="brand-symbol" aria-hidden="true">
             日
           </span>
@@ -40,6 +40,7 @@ export default function Shell({
             <Link
               key={path}
               href={`/${path}`}
+              replace
               className={
                 pathname === `/${path}` ? "nav-link active" : "nav-link"
               }
@@ -53,10 +54,10 @@ export default function Shell({
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <Link className="nav-link" href="/settings">
+          <Link className="nav-link" href="/settings" replace>
             ⚙ <span>偏好与目标</span>
           </Link>
-          <Link className="subtle-link" href="/history">
+          <Link className="subtle-link" href="/history" replace>
             历史目标
           </Link>
           <div className="profile">

@@ -25,8 +25,10 @@ def occupied(store, start, end):
 
 def save_resource(store: RecordStore, resource, value, key=None, version=None):
     kind, model = MODELS[resource]
-    data = model.model_validate(value).model_dump(mode='json')
     old = store.get(kind, key) if key else None
+    # Hidden form fields and newly added optional fields must survive old clients.
+    preserved = ('status', 'discomfort', 'training_type') if kind == 'run' else ('phonetic_uk',) if kind == 'word' else ()
+    data = model.model_validate({**{k: old[k] for k in preserved if old and k in old}, **value}).model_dump(mode='json')
     if kind == 'task':
         check_conflicts([dict(data, id=key)], occupied(store, data['date'], data['date']))
         if old and any(r.get('task_id') == key for r in store.list('run')) and (data['date'] != old['date'] or data['category'] != 'training'):
@@ -60,12 +62,15 @@ def save_resource(store: RecordStore, resource, value, key=None, version=None):
     action = '修改' if old else '添加'
     if kind == 'task' and old and old['status'] != data['status']:
         action = {'done': '完成', 'pending': '恢复待办', 'partial': '部分完成', 'skipped': '跳过'}[data['status']]
-    store.event(action, {'title': data.get('title') or data.get('term') or f"跑步 {data.get('distance_km', 0)} km", 'resource': label, 'record_id': result['id']}, data.get('date'))
+    if kind != 'word':
+        store.event(action, {'title': data.get('title') or data.get('term') or f"跑步 {data.get('distance_km', 0)} km", 'resource': label, 'record_id': result['id']}, data.get('date'))
     return result
 
 
 def apply_plan(store, draft_id, version):
     draft = store.get('draft', draft_id)
+    if draft.get('rejected'):
+        raise Conflict('这份草稿已否决，不能采用')
     if draft.get('applied'):
         return draft
     if draft['version'] != version or draft['snapshot'] != snapshot(store):
@@ -80,6 +85,46 @@ def apply_plan(store, draft_id, version):
     result = store.save('draft', {**draft, 'applied': True}, draft_id, version)
     store.event('采用计划', {'title': plan['summary'][:160], 'count': len(plan['tasks'])})
     return result
+
+
+def editable_plan(store, draft_id, version):
+    draft = store.get('draft', draft_id)
+    if draft['version'] != version:
+        raise Conflict('草稿已更新，请刷新后重试')
+    if draft.get('applied') or draft.get('rejected'):
+        raise Conflict('已采用或否决的草稿不能修改')
+    return draft
+
+
+def validate_plan(store, plan, start):
+    Plan.model_validate(plan)
+    end = (date.fromisoformat(start) + timedelta(days=6)).isoformat()
+    if any(not start <= t['date'] <= end for t in plan['tasks']):
+        raise Conflict('计划中的任务日期必须位于当前周')
+    check_conflicts(plan['tasks'], occupied(store, start, end))
+
+
+def training_history(store, start):
+    """Three complete Monday–Sunday weeks preceding the target week, by run date."""
+    target = date.fromisoformat(start)
+    first = target - timedelta(weeks=3)
+    runs = sorted((r for r in store.list('run') if first.isoformat() <= r['date'] < start), key=lambda r: (r['date'], r['id']))
+    weeks = []
+    for n in range(3):
+        left = first + timedelta(weeks=n)
+        right = left + timedelta(days=6)
+        rows = [r for r in runs if left.isoformat() <= r['date'] <= right.isoformat()]
+        actual = [r for r in rows if r['status'] != 'skipped']
+        types = {}
+        for r in actual:
+            name = r.get('training_type') or 'unclassified'
+            types[name] = types.get(name, 0) + 1
+        weeks.append({'start': left.isoformat(), 'end': right.isoformat(), 'data_missing': not rows,
+                      'count': len(actual), 'skipped_count': len(rows) - len(actual),
+                      'distance_km': round(sum(r['distance_km'] for r in actual), 2),
+                      'duration_minutes': round(sum(r['duration_minutes'] for r in actual), 2),
+                      'training_types': types, 'average_effort': round(sum(r['effort'] for r in actual) / len(actual), 2) if actual else None})
+    return {'start': first.isoformat(), 'end': (target - timedelta(days=1)).isoformat(), 'runs': runs, 'weeks': weeks}
 
 
 def apply_course_draft(store, draft_id, version):

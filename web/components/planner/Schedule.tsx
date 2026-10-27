@@ -29,6 +29,7 @@ import {
   JobPanel,
 } from "./Shared";
 import { TaskEditor, taskFields } from "./Tasks";
+import PlanFeedback from "./PlanFeedback";
 export const courseFields: Field[] = [
   { name: "title", label: "课程名称", required: true },
   { name: "location", label: "上课地点" },
@@ -94,14 +95,25 @@ function courseBody(data: Record<string, unknown>) {
 export function DraftPanel({
   draft,
   onChanged,
+  onQueued,
 }: {
   draft: Draft;
   onChanged: () => void;
+  onQueued?: () => void;
 }) {
   const [plan, setPlan] = useState(draft.plan),
     [editing, setEditing] = useState<number | null>(null),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [version, setVersion] = useState(draft.version),
+    [lastRevision, setLastRevision] = useState(draft.last_revision),
+    [feedbackOpen, setFeedbackOpen] = useState(false);
+  const editable = !draft.applied && !draft.rejected;
+  async function saveDraft() {
+    const saved = await put<Draft>(`/drafts/plan/${draft.id}`, { version, data: plan });
+    setVersion(saved.version);
+    return saved;
+  }
   return (
     <section className="draft-panel">
       <div className="section-heading">
@@ -109,35 +121,39 @@ export function DraftPanel({
           {draft.kind === "training_plan" ? "训练计划草稿" : "周日程草稿"} ·{" "}
           {draft.week_start}
         </h3>
-        <span className="tag">{draft.applied ? "已采用" : "等待确认"}</span>
+        <span className="tag">{draft.rejected ? "已否决" : draft.applied ? "已采用" : "等待确认"}</span>
       </div>
       <p>{plan.summary}</p>
       <ul className="draft-tasks">
         {plan.tasks.map((t, i) => (
-          <li key={i}>
+          <li key={i} className={lastRevision?.changed_indices.includes(i) ? "revised-task" : undefined}>
             <div>
+              {lastRevision?.changed_indices.includes(i) ? <span className="tag">已按反馈调整</span> : null}
               <small>
                 {t.date} · {t.start_time}–{t.end_time}
               </small>
               <strong>{t.title}</strong>
               <p>{t.note}</p>
             </div>
-            {!draft.applied ? (
+            {editable ? (
               <div className="row-actions">
                 <button
                   className="button small secondary"
+                  disabled={busy}
                   onClick={() => setEditing(i)}
                 >
                   编辑
                 </button>
                 <button
                   className="button small quiet"
-                  onClick={() =>
+                  disabled={busy}
+                  onClick={() => {
+                    setLastRevision(null);
                     setPlan({
                       ...plan,
                       tasks: plan.tasks.filter((_, index) => index !== i),
-                    })
-                  }
+                    });
+                  }}
                 >
                   移除
                 </button>
@@ -150,17 +166,27 @@ export function DraftPanel({
         <p className="notice">暂未安排：{plan.unscheduled.join("；")}</p>
       ) : null}
       <Notice text={error} error />
-      {!draft.applied ? (
+      {lastRevision ? (
+        <details className="revision-diff">
+          <summary>查看本次修改 · {lastRevision.changes.length} 项</summary>
+          <p>你的说明：{lastRevision.feedback}</p>
+          {lastRevision.changes.map((change, index) => (
+            <div key={index}>
+              <p>原安排：{change.before.date} {change.before.start_time}–{change.before.end_time} · {change.before.title} · {change.before.note}</p>
+              {change.after.length ? change.after.map((task, n) => <p key={n}>调整后：{task.date} {task.start_time}–{task.end_time} · {task.title} · {task.note}</p>) : <p>调整后：已移除这项安排</p>}
+            </div>
+          ))}
+        </details>
+      ) : null}
+      {editable ? (
+        <div className="form-actions draft-actions">
         <button
           className="button"
           disabled={busy}
           onClick={async () => {
             setBusy(true);
             try {
-              const saved = await put<Draft>(`/drafts/plan/${draft.id}`, {
-                version: draft.version,
-                data: plan,
-              });
+              const saved = await saveDraft();
               await post(`/drafts/plan/${draft.id}/adoption`, {
                 version: saved.version,
                 data: {},
@@ -176,7 +202,20 @@ export function DraftPanel({
         >
           {busy ? "正在保存…" : "确认采用这份计划"}
         </button>
+        <button className="button secondary" disabled={busy} onClick={() => setFeedbackOpen(true)}>否决这个计划</button>
+        </div>
       ) : null}
+      {feedbackOpen ? <PlanFeedback plan={plan} onClose={() => setFeedbackOpen(false)}
+        onReject={async () => {
+          await post(`/drafts/plan/${draft.id}/rejection`, { version, data: {} });
+          onChanged();
+        }}
+        onRevise={async (indices, feedback, allowRemoval) => {
+          const saved = await saveDraft();
+          await post(`/drafts/plan/${draft.id}/revisions`, { version: saved.version, selected_indices: indices, feedback, allow_removal: allowRemoval });
+          onQueued?.();
+          onChanged();
+        }} /> : null}
       {editing !== null ? (
         <RecordForm
           title="调整草稿安排"
@@ -184,6 +223,7 @@ export function DraftPanel({
           initial={{ ...plan.tasks[editing] }}
           onClose={() => setEditing(null)}
           onSave={async (data) => {
+            setLastRevision(null);
             setPlan({
               ...plan,
               tasks: plan.tasks.map((t, i) =>
@@ -491,12 +531,13 @@ export default function Schedule() {
           />
         ))}
       {drafts.data?.plans
-        .filter((d) => !d.applied && d.week_start === start)
+        .filter((d) => !d.applied && !d.rejected && d.week_start === start)
         .map((d) => (
           <DraftPanel
             key={`${d.id}-${d.version}`}
             draft={d}
             onChanged={reload}
+            onQueued={() => setJobRevision((x) => x + 1)}
           />
         ))}
       <JobPanel refreshKey={jobRevision} onFinished={reload} />

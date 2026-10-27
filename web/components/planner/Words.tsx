@@ -26,6 +26,7 @@ import {
 } from "./Shared";
 export const wordFields: Field[] = [
   { name: "term", label: "单词或短语", required: true },
+  { name: "phonetic_uk", label: "英式音标", placeholder: "/rɪˈzɪliəns/" },
   { name: "part_of_speech", label: "词性" },
   { name: "meaning", label: "中文释义", type: "textarea" },
   { name: "example", label: "英文例句 / 语境", type: "textarea" },
@@ -225,6 +226,7 @@ export default function Words() {
         version: number;
         words: {
           word_id: string;
+          phonetic_uk?: string;
           meaning: string;
           part_of_speech: string;
           example: string;
@@ -409,6 +411,7 @@ export default function Words() {
                   {w.term}
                   <small>{w.part_of_speech}</small>
                 </h2>
+                {w.phonetic_uk ? <p className="word-phonetic" lang="en-GB">英 {w.phonetic_uk}</p> : null}
                 <p>{w.meaning || "还没有释义，点击编辑或让 AI 补全。"}</p>
                 {w.example ? (
                   <p lang="en" className="word-example">
@@ -504,6 +507,7 @@ export default function Words() {
                 <strong>
                   {words.data?.items.find((x) => x.id === w.word_id)?.term}
                 </strong>
+                {w.phonetic_uk ? <p className="word-phonetic" lang="en-GB">英 {w.phonetic_uk}</p> : null}
                 <p>
                   {w.part_of_speech} · {w.meaning}
                 </p>

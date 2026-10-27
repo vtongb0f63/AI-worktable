@@ -50,6 +50,7 @@ class Course(Timed):
 
 class Word(Input):
     term: str = Field(min_length=1, max_length=100)
+    phonetic_uk: str = Field(default='', max_length=200)
     meaning: str = Field(default='', max_length=2000)
     part_of_speech: str = Field(default='', max_length=60)
     example: str = Field(default='', max_length=2000)
@@ -59,6 +60,7 @@ class Word(Input):
 
 class Run(Input):
     date: date
+    training_type: Literal['', 'easy', 'recovery', 'long', 'tempo', 'interval', 'hill', 'fartlek', 'race', 'other'] = ''
     distance_km: float = Field(ge=0, le=250)
     duration_minutes: float = Field(ge=0, le=3000)
     effort: int = Field(ge=1, le=10)
@@ -128,6 +130,29 @@ class Plan(Input):
     summary: str = Field(max_length=4000)
     tasks: list[Task] = Field(max_length=100)
     unscheduled: list[str] = Field(default_factory=list, max_length=50)
+
+
+class PlanRevision(Input):
+    version: int = Field(ge=1)
+    selected_indices: list[int] = Field(min_length=1, max_length=100)
+    feedback: str = Field(min_length=1, max_length=3000)
+    allow_removal: bool = False
+
+    @field_validator('selected_indices')
+    @classmethod
+    def distinct_indices(cls, value):
+        if len(set(value)) != len(value) or any(i < 0 for i in value):
+            raise ValueError('请选择不同的有效安排')
+        return value
+
+
+class PlanReplacement(Input):
+    index: int = Field(ge=0)
+    tasks: list[Task] = Field(max_length=100)
+
+
+class PlanRevisionResult(Input):
+    replacements: list[PlanReplacement] = Field(min_length=1, max_length=100)
 
 
 class QuizItem(Input):

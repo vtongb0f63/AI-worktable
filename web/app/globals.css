@@ -860,6 +860,18 @@ progress::-webkit-progress-value {
   background: #1c355360;
   backdrop-filter: blur(3px);
 }
+.feedback-actions { flex-wrap: wrap; }
+.draft-actions { justify-content: flex-start; flex-wrap: wrap; }
+.revision-selection { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 16px 0; min-width: 0; }
+.revision-option { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; margin: 12px 0; font-weight: 400; }
+.revision-option input { flex: 0 0 auto; margin-top: 4px; }
+.revision-option span { min-width: 0; overflow-wrap: anywhere; }
+.revision-option small { display: block; color: var(--muted); }
+.revision-feedback { margin: 16px 0; }
+.revised-task { background: #edf5ed; border-radius: 6px; padding-inline: 10px !important; }
+.revision-diff { margin: 16px 0; overflow-wrap: anywhere; }
+.revision-diff > div { border-top: 1px solid var(--line); padding: 8px 0; }
+.word-phonetic { color: var(--muted); font-family: system-ui, sans-serif; }
 .dialog-heading {
   display: flex;
   align-items: center;

@@ -137,7 +137,8 @@ def word_review(key: str, value: schemas.Review, user=Depends(require_user)):
 @router.get('/journal')
 def journal(day: date, offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200), user=Depends(require_user)):
     with records(user['id']) as store:
-        events = [r for r in store.list('journal_event') if r['date'] == day.isoformat()]
+        events = [r for r in store.list('journal_event') if r['date'] == day.isoformat()
+                  and not (r['kind'] in ('添加', '修改') and r.get('detail', {}).get('resource') == '词汇')]
         return {'items': events[offset:offset + limit], 'total': len(events), 'notes': [r for r in store.list('journal_note') if r['date'] == day.isoformat()]}
 
 
@@ -176,8 +177,8 @@ def edit_draft(kind: Literal['plan', 'course'], key: str, value: schemas.Revisio
     with records(user['id']) as store:
         name = 'draft' if kind == 'plan' else 'course_draft'
         old = store.get(name, key)
-        if old.get('applied'):
-            raise Conflict('已采用的草稿不能再次修改')
+        if old.get('applied') or old.get('rejected'):
+            raise Conflict('已采用或否决的草稿不能再次修改')
         if kind == 'plan':
             data = {'plan': schemas.Plan.model_validate(value.data).model_dump(mode='json')}
         else:
@@ -185,7 +186,26 @@ def edit_draft(kind: Literal['plan', 'course'], key: str, value: schemas.Revisio
             if len(raw) > 100:
                 raise ValueError('课程过多')
             data = {'courses': [schemas.Course.model_validate(c).model_dump(mode='json') for c in raw]}
-        return store.save(name, {**old, **data}, key, value.version)
+        return store.save(name, {**old, **data, 'last_revision': None}, key, value.version)
+
+
+@router.post('/drafts/plan/{key}/rejection')
+def reject_plan(key: str, value: schemas.Revision, user=Depends(require_user)):
+    with records(user['id']) as store:
+        old = services.editable_plan(store, key, value.version)
+        return store.save('draft', {**old, 'rejected': True}, key, value.version)
+
+
+@router.post('/drafts/plan/{key}/revisions', status_code=202)
+def revise_plan(key: str, value: schemas.PlanRevision, user=Depends(require_user)):
+    with records(user['id']) as store:
+        old = services.editable_plan(store, key, value.version)
+        if max(value.selected_indices) >= len(old['plan']['tasks']):
+            raise ValueError('所选安排不存在，请刷新后重试')
+        if old['snapshot'] != services.snapshot(store):
+            raise Conflict('课表、任务或训练记录已变化，请重新生成计划')
+        payload = {**value.model_dump(), 'draft_id': key}
+        return jobs.enqueue(user['id'], 'plan_revision', payload, connection=store.db)
 
 
 @router.post('/drafts/{kind}/{key}/adoption')
@@ -280,8 +300,8 @@ def adopt_words(key: str, value: schemas.Revision, user=Depends(require_user)):
             word = store.get('word', item['word_id'])
             if word['version'] != draft['versions'][word['id']]:
                 raise Conflict('词条已修改，请重新生成补全建议')
-            body = {k: word[k] for k in schemas.Word.model_fields}
-            body.update({k: item[k] for k in ('meaning', 'part_of_speech', 'example')})
+            body = {k: word[k] for k in schemas.Word.model_fields if k in word}
+            body.update({k: item[k] for k in ('meaning', 'part_of_speech', 'example', 'phonetic_uk') if k in item})
             services.save_resource(store, 'words', body, word['id'], word['version'])
         return store.save('word_suggestions', {**draft, 'applied': True}, key, value.version)
 

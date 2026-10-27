@@ -75,6 +75,7 @@ def main():
 
         page.goto(BASE+'/running');page.wait_for_load_state('networkidle')
         page.get_by_role('button',name='＋ 记录一次训练').click()
+        dialog.get_by_label('训练项目', exact=True).select_option('easy')
         dialog.get_by_label('距离（公里）').fill('5')
         dialog.get_by_label('用时（分钟）').fill('30')
         dialog.get_by_role('button',name='保存',exact=True).click()

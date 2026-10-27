@@ -27,16 +27,25 @@ import {
   Pagination,
 } from "./Shared";
 import { DraftPanel } from "./Schedule";
+const trainingTypes: [string, string][] = [
+  ["easy", "轻松跑：舒适、放松的日常跑"],
+  ["recovery", "恢复跑：低强度恢复性跑步"],
+  ["long", "长距离跑：以持续时间和耐力为主"],
+  ["tempo", "节奏跑：持续、稳定的较快跑"],
+  ["interval", "间歇跑：快跑与恢复交替"],
+  ["hill", "坡道跑：以坡路练习为主"],
+  ["fartlek", "变速跑：灵活交替快慢速度"],
+  ["race", "比赛／测试：记录比赛或阶段测试"],
+  ["other", "其他：在训练感受中补充"],
+];
+const trainingTypeNames = Object.fromEntries(trainingTypes.map(([key, label]) => [key, label.split("：")[0]]));
 const baseFields: Field[] = [
   { name: "date", label: "训练日期", type: "date", required: true },
   {
-    name: "status",
-    label: "完成情况",
-    options: [
-      ["done", "完整完成"],
-      ["partial", "部分完成"],
-      ["skipped", "跳过训练"],
-    ],
+    name: "training_type",
+    label: "训练项目",
+    required: true,
+    options: [["", "请选择训练项目"], ...trainingTypes],
   },
   {
     name: "distance_km",
@@ -77,7 +86,6 @@ const baseFields: Field[] = [
     type: "textarea",
     placeholder: "例如：第1公里 5:20，第2公里 5:15…",
   },
-  { name: "discomfort", label: "身体不适（可选）", type: "textarea" },
   { name: "note", label: "训练感受", type: "textarea" },
 ];
 function pace(run: Run) {
@@ -204,12 +212,13 @@ export default function Running() {
         </section>
       </div>
       {drafts.data?.plans
-        .filter((d) => d.kind === "training_plan" && !d.applied)
+        .filter((d) => d.kind === "training_plan" && !d.applied && !d.rejected)
         .map((d) => (
           <DraftPanel
             key={`${d.id}-${d.version}`}
             draft={d}
             onChanged={reload}
+            onQueued={() => setJobRevision((x) => x + 1)}
           />
         ))}
       <section className="paper-panel">
@@ -224,6 +233,7 @@ export default function Running() {
               <article key={r.id} className="run-row">
                 <div>
                   <time>{r.date}</time>
+                  <small>{trainingTypeNames[r.training_type] || "未分类"}</small>
                   <small>
                     {
                       (
@@ -345,7 +355,12 @@ export default function Running() {
           }
           onClose={() => setEditing(null)}
           onSave={async (value) => {
-            const data = { ...value, task_id: value.task_id || null };
+            const data = {
+              ...value,
+              status: editing === "new" ? "done" : editing.status,
+              discomfort: editing === "new" ? "" : editing.discomfort,
+              task_id: value.task_id || null,
+            };
             if (editing === "new") await post("/records/runs", data);
             else
               await put(`/records/runs/${editing.id}`, {

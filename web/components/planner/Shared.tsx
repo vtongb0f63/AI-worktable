@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { Job, jobNames, jobStates, post, useData } from "@/lib/planner";
 export function PageHeading({
@@ -90,6 +90,7 @@ export function RecordForm({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const fieldPrefix = useId();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [dirty, setDirty] = useState(false);
@@ -168,9 +169,10 @@ export function RecordForm({
               key={field.name}
               className={field.type === "textarea" ? "wide" : ""}
             >
-              <span>{field.label}</span>
+              <span id={`${fieldPrefix}-${field.name}`}>{field.label}</span>
               {field.options ? (
                 <select
+                  aria-labelledby={`${fieldPrefix}-${field.name}`}
                   required={field.required}
                   name={field.name}
                   defaultValue={String(
@@ -185,6 +187,7 @@ export function RecordForm({
                 </select>
               ) : field.type === "textarea" ? (
                 <textarea
+                  aria-labelledby={`${fieldPrefix}-${field.name}`}
                   name={field.name}
                   rows={4}
                   required={field.required}
@@ -194,6 +197,7 @@ export function RecordForm({
                 />
               ) : (
                 <input
+                  aria-labelledby={`${fieldPrefix}-${field.name}`}
                   name={field.name}
                   type={field.type || "text"}
                   required={field.required}

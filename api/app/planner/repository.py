@@ -22,7 +22,8 @@ class SQLiteRecords:
 
     @staticmethod
     def decode(row):
-        return {**json.loads(row['payload']), 'id': row['id'], 'version': row['version'], 'created_at': row['created_at'], 'updated_at': row['updated_at']}
+        defaults = {'word': {'phonetic_uk': ''}, 'run': {'training_type': ''}, 'draft': {'rejected': False}}.get(row['kind'], {})
+        return {**defaults, **json.loads(row['payload']), 'id': row['id'], 'version': row['version'], 'created_at': row['created_at'], 'updated_at': row['updated_at']}
 
     def list(self, kind):
         return [self.decode(r) for r in self.db.execute('SELECT * FROM planner_records WHERE user_id=? AND kind=? ORDER BY created_at DESC', (self.user_id, kind))]

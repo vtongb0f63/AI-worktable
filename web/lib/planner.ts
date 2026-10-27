@@ -35,6 +35,7 @@ export type Course = Entity & {
 };
 export type Word = Entity & {
   term: string;
+  phonetic_uk: string;
   meaning: string;
   part_of_speech: string;
   example: string;
@@ -46,6 +47,7 @@ export type Word = Entity & {
 };
 export type Run = Entity & {
   date: string;
+  training_type: string;
   distance_km: number;
   duration_minutes: number;
   effort: number;
@@ -85,6 +87,12 @@ export type Draft = Entity & {
   week_start: string;
   kind: string;
   applied: boolean;
+  rejected?: boolean;
+  last_revision?: {
+    feedback: string;
+    changed_indices: number[];
+    changes: { before: Plan["tasks"][number]; after: Plan["tasks"] }[];
+  } | null;
 };
 export type CourseDraft = Entity & {
   courses: (Omit<Course, keyof Entity | "start_time" | "end_time" | "weekday"> & { start_time: string | null; end_time: string | null; weekday: number | null })[];
@@ -126,6 +134,7 @@ export const categoryName: Record<string, string> = {
   running: "中长跑",
 };
 export const jobNames: Record<string, string> = {
+  plan_revision: "计划局部修改",
   week_plan: "周日程",
   training_plan: "训练计划",
   news: "每日新闻",
@@ -199,6 +208,7 @@ export const courseKeys = [
 ];
 export const wordKeys = [
   "term",
+  "phonetic_uk",
   "meaning",
   "part_of_speech",
   "example",
@@ -207,6 +217,7 @@ export const wordKeys = [
 ];
 export const runKeys = [
   "date",
+  "training_type",
   "distance_km",
   "duration_minutes",
   "effort",

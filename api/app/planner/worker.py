@@ -6,7 +6,7 @@ from .. import config
 from ..db import connect, transaction, init_db
 from ..security import iso, now
 from . import jobs, services, schemas
-from .domain import today, week_start, ZONE
+from .domain import today, week_start, ZONE, Conflict
 from .repository import records
 from .ai_port import GatewayProvider, AIUnavailable
 
@@ -22,8 +22,19 @@ def prepare(job, provider):
         if kind in ('week_plan', 'training_plan'):
             start = payload['week_start']
             end = (date.fromisoformat(start) + timedelta(days=6)).isoformat()
-            context = {'settings': profile, 'week_start': start, 'week_end': end, 'occupied': services.occupied(store, start, end), 'overdue': [t for t in store.list('task') if t['date'] < start and t['status'] == 'pending'][:30], 'recent_runs': store.list('run')[:28], 'vocabulary_due': sum(w['review_on'] <= end for w in store.list('word'))}
+            context = {'settings': profile, 'week_start': start, 'week_end': end, 'occupied': services.occupied(store, start, end), 'overdue': [t for t in store.list('task') if t['date'] < start and t['status'] == 'pending'][:30], 'training_history': services.training_history(store, start), 'vocabulary_due': sum(w['review_on'] <= end for w in store.list('word'))}
             fingerprint = services.snapshot(store)
+        elif kind == 'plan_revision':
+            draft = services.editable_plan(store, payload['draft_id'], payload['version'])
+            if draft['snapshot'] != services.snapshot(store):
+                raise Conflict('课表、任务或训练记录已变化，请重新生成计划')
+            start = draft['week_start']
+            context = {'settings': profile, 'week_start': start,
+                       'week_end': (date.fromisoformat(start) + timedelta(days=6)).isoformat(),
+                       'plan': draft['plan'], 'selected_indices': payload['selected_indices'],
+                       'feedback': payload['feedback'], 'allow_removal': payload['allow_removal'],
+                       'occupied': services.occupied(store, start, (date.fromisoformat(start) + timedelta(days=6)).isoformat()),
+                       'training_history': services.training_history(store, start)}
         elif kind in ('word_enrich', 'quiz'):
             words = [store.get('word', key) for key in payload['word_ids']]
             cached = store.list('question') if kind == 'quiz' else []
@@ -34,16 +45,53 @@ def prepare(job, provider):
                 return {'already_done': True}
     if kind in ('week_plan', 'training_plan'):
         task = '生成本周具体时段的新增安排。保留所有 occupied 中的安排，不重复安排已有事项；不要自动移动旧任务。只安排 week_start 到 week_end，留出吃饭、通勤与休息，无法放下的事项写 unscheduled。所有任务 status=pending。'
-        task += ('仅生成跑步训练；注明热身、主训练、放松、目标和预计时长，考虑近四周跑量及身体反馈，不适时减少强度。category=training。' if kind == 'training_plan' else '安排学习、词汇复习与日常活动。跑步只保留已确认训练，不额外制定跑步强度。')
+        task += ('仅生成跑步训练；注明热身、主训练、放松、目标和预计时长，读取 training_history 中前三个完整自然周的全部记录和逐周汇总，考虑训练类型、跑量、疲劳及已有身体反馈。data_missing 表示数据缺失，不得推测该周训练经历。category=training。' if kind == 'training_plan' else '安排学习、词汇复习与日常活动。跑步只保留已确认训练，不额外制定跑步强度。')
         plan = schemas.Plan.model_validate(provider.generate(prompt(task, context, schemas.Plan.model_json_schema()))).model_dump(mode='json')
-        return {'type': 'draft', 'data': {'plan': plan, 'snapshot': fingerprint, 'week_start': start, 'kind': kind, 'applied': False}}
+        return {'type': 'draft', 'data': {'plan': plan, 'snapshot': fingerprint, 'week_start': start, 'kind': kind, 'applied': False, 'rejected': False}}
+    if kind == 'plan_revision':
+        instruction = ('根据用户反馈，只修改 selected_indices 中的安排。每个选中的原始零起始索引必须返回且仅返回一次，'
+                       'tasks 为替换该条目的完整安排列表，可以调整或拆分。未选中条目不允许返回或修改。'
+                       '只有 allow_removal=true 且用户明确要求删除时才允许 tasks 为空。'
+                       '保留同周约束，避开 occupied 和未选中条目的时段，status=pending；'
+                       '训练计划仅使用 category=training，参考前三周训练数据，缺失数据不得臆测。')
+        replacements = schemas.PlanRevisionResult.model_validate(provider.generate(prompt(instruction, context, schemas.PlanRevisionResult.model_json_schema()))).model_dump(mode='json')['replacements']
+        indices = [r['index'] for r in replacements]
+        if sorted(indices) != sorted(payload['selected_indices']):
+            raise ValueError('AI 修改范围不符，原草稿已保留')
+        if not payload['allow_removal'] and any(not r['tasks'] for r in replacements):
+            raise ValueError('AI 试图删除未授权的安排，原草稿已保留')
+        mapping = {r['index']: r['tasks'] for r in replacements}
+        tasks, changes, changed_indices = [], [], []
+        for index, original in enumerate(draft['plan']['tasks']):
+            if index not in mapping:
+                tasks.append(original)
+                continue
+            replacement = [{**t, 'status': 'pending', 'source_id': None} for t in mapping[index]]
+            if draft.get('kind') == 'training_plan' and any(t['category'] != 'training' for t in replacement):
+                raise ValueError('训练计划只能包含跑步训练')
+            if replacement != [original]:
+                changed_indices.extend(range(len(tasks), len(tasks) + len(replacement)))
+                changes.append({'before': original, 'after': replacement})
+            tasks.extend(replacement)
+        plan = {**draft['plan'], 'tasks': tasks}
+        # Validate against the context actually sent to the model, then recheck at commit.
+        schemas.Plan.model_validate(plan)
+        return {'type': 'draft_revision', 'draft_id': draft['id'], 'version': payload['version'],
+                'snapshot': draft['snapshot'], 'plan': plan,
+                'last_revision': {'feedback': payload['feedback'], 'changes': changes, 'changed_indices': changed_indices}}
     if kind == 'course_import':
         from .uploads import load_upload
         from .course_import import extract
         text, images = load_upload(payload['upload'])
         return {'type': 'course_draft', 'data': extract(provider, text, images, profile)}
     if kind == 'word_enrich':
-        result = provider.generate(prompt('补充单词的中文释义、词性及英文例句。保留word_id，不改动原单词。', words, {'words': [{'word_id': '原id', 'meaning': '中文释义', 'part_of_speech': '词性', 'example': '英文例句'}]}))
+        result = provider.generate(prompt('补充单词的中文释义、词性、英文例句及英式国际音标 phonetic_uk（用 /…/ 标注）。仅提供英式音标，无法确定时留空。保留word_id，不改动原单词。', words, {'words': [{'word_id': '原id', 'meaning': '中文释义', 'part_of_speech': '词性', 'example': '英文例句', 'phonetic_uk': '英式国际音标或空字符串'}]}))
+        if sorted(w['word_id'] for w in result['words']) != sorted(w['id'] for w in words):
+            raise ValueError('AI 未完整覆盖所选词汇，请重新补全')
+        for item in result['words']:
+            original = next(w for w in words if w['id'] == item['word_id'])
+            schemas.Word.model_validate({**{k: original[k] for k in schemas.Word.model_fields if k in original},
+                                         **{k: item[k] for k in ('meaning', 'part_of_speech', 'example', 'phonetic_uk') if k in item}})
         return {'type': 'word_suggestions', 'data': {'words': result['words'], 'versions': {w['id']: w['version'] for w in words}}}
     if kind == 'quiz':
         mode = payload['mode']
@@ -115,7 +163,14 @@ def finish(job, result):
         if current['status'] != 'running':
             return
         kind = result.get('type')
-        if kind in ('draft', 'course_draft', 'word_suggestions'):
+        if kind == 'draft_revision':
+            old = services.editable_plan(store, result['draft_id'], result['version'])
+            if result['snapshot'] != services.snapshot(store):
+                raise Conflict('生成期间课表、任务或训练记录发生变化，原草稿已保留')
+            services.validate_plan(store, result['plan'], old['week_start'])
+            record = store.save('draft', {**old, 'plan': result['plan'], 'last_revision': result['last_revision']}, old['id'], old['version'])
+            result = {'record_id': record['id'], 'type': kind}
+        elif kind in ('draft', 'course_draft', 'word_suggestions'):
             record = store.save(kind, {**result['data'], 'job_id': job['id']})
             result = {'record_id': record['id'], 'type': kind}
         elif kind == 'questions':
