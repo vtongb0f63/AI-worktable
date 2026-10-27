@@ -779,6 +779,8 @@ progress::-webkit-progress-value {
   gap: 22px;
 }
 .headline-grid > a {
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding-right: 15px;
   border-right: 1px solid var(--line);
 }
@@ -1108,10 +1110,12 @@ progress::-webkit-progress-value {
 }
 .news-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 22px;
 }
 .news-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
   background: white;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -1121,6 +1125,7 @@ progress::-webkit-progress-value {
 }
 .news-meta {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
   font-size: 10px;

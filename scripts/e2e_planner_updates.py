@@ -28,10 +28,14 @@ class RevisionAI:
 
 
 def seed():
+    from app.db import DATABASE_PATH
+    assert Path(DATABASE_PATH).resolve() == DATABASE.resolve(), 'Requires disposable browser-test database'
     init_db()
     with transaction() as db:
         db.execute('INSERT OR IGNORE INTO users(id,email,username,password_hash,verified_at,created_at,is_admin) VALUES(?,?,?,?,?,?,1)',
                    ('e2e-owner', 'owner@example.com', 'learner', ph.hash('local-e2e-password'), iso(), iso()))
+        db.execute('delete from planner_jobs where user_id=?', ('e2e-owner',))
+        db.execute('delete from planner_records where user_id=?', ('e2e-owner',))
 
 
 def main():
@@ -87,7 +91,9 @@ def main():
         page.wait_for_load_state('networkidle')
         preview = page.locator('.draft-panel').filter(has_text='AI 词义补全').filter(has_text=term)
         expect(preview.get_by_text('英 /rɪˈzɪliəns/', exact=True)).to_be_visible()
-        preview.get_by_role('button', name='采用词义补全').click()
+        with page.expect_response(lambda response: '/word-suggestions/' in response.url and response.url.endswith('/adoption') and response.request.method == 'POST') as adoption:
+            preview.get_by_role('button', name='采用词义补全').click()
+        assert adoption.value.status == 200, adoption.value.text()
         expect(preview).not_to_be_visible()
         expect(row.get_by_text('恢复力', exact=True)).to_be_visible()
         page.screenshot(path=str(output / 'words-desktop.png'), full_page=True)
@@ -97,6 +103,8 @@ def main():
                 'plan': {'summary': '局部修改浏览器验收 ' + suffix, 'tasks': [Task(title='必须保持原样', date=today(), start_time='08:00', end_time='09:00').model_dump(mode='json'), Task(title='选中修改的安排', date=today(), start_time='10:00', end_time='11:00').model_dump(mode='json')], 'unscheduled': []}})
         page.get_by_role('link', name='周日程').click()
         page.wait_for_url('**/schedule')
+        page.reload()
+        page.wait_for_load_state('networkidle')
         panel = page.locator('.draft-panel').filter(has_text=suffix)
         panel.get_by_role('button', name='否决这个计划', exact=True).click()
         expect(dialog.get_by_role('button', name='直接否决', exact=True)).to_be_visible()
@@ -157,11 +165,21 @@ def main():
         expect(page.locator('.run-row').first.get_by_text('恢复跑', exact=True)).to_be_visible()
         page.set_viewport_size({'width': 1440, 'height': 1000})
         page.screenshot(path=str(output / 'running-desktop.png'), full_page=True)
+        # Populated cards must shrink even while off-screen content is skipped.
+        with records('e2e-owner') as store:
+            for n in range(4):
+                store.save('news', {'date': today(), 'title': 'LongEnglishHeadline' * 12, 'category': 'ai',
+                    'source': 'LongNewsSourceName' * 5, 'url': 'https://example.com/news', 'published_at': iso(),
+                    'summary_zh': '新闻卡片的手机宽度验收。', 'summary_en': 'LongEnglishSummary' * 20, 'bookmarked': False})
         for section in ['today', 'schedule', 'news', 'words', 'running', 'journal', 'settings', 'history']:
             page.set_viewport_size({'width': 390, 'height': 844})
             page.goto(base + '/' + section)
             page.wait_for_load_state('networkidle')
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), section
+            if section == 'news':
+                page.locator('.news-card').last.scroll_into_view_if_needed()
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'populated news cards overflow'
+                page.screenshot(path=str(output / 'news-mobile.png'), full_page=True)
         page.get_by_label('退出登录', exact=True).click()
         page.wait_for_url('**/login')
         assert not errors, errors
